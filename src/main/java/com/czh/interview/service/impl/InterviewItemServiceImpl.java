@@ -2,28 +2,31 @@ package com.czh.interview.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.czh.interview.common.dto.AiEvaluationResult;
 import com.czh.interview.entity.Interview;
 import com.czh.interview.entity.InterviewItem;
+import com.czh.interview.entity.Question;
 import com.czh.interview.handler.BizException;
 import com.czh.interview.mapper.InterviewItemMapper;
 import com.czh.interview.mapper.InterviewMapper;
+import com.czh.interview.service.AiEvaluationService;
 import com.czh.interview.service.InterviewItemService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.czh.interview.service.QuestionService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Random;
 
 @Service
+@RequiredArgsConstructor
 public class InterviewItemServiceImpl extends ServiceImpl<InterviewItemMapper, InterviewItem> implements InterviewItemService {
 
-    @Autowired
-    private InterviewItemMapper interviewItemMapper;
-
-    @Autowired
-    private InterviewMapper interviewMapper;
+    private final InterviewItemMapper interviewItemMapper;
+    private final InterviewMapper interviewMapper;
+    private final AiEvaluationService aiEvaluationService;
+    private final QuestionService questionService;
 
     @Override
     @Transactional
@@ -31,6 +34,10 @@ public class InterviewItemServiceImpl extends ServiceImpl<InterviewItemMapper, I
 
         // 1. 更新候选人答案
         InterviewItem item = interviewItemMapper.selectById(interviewItemId);
+        if (item == null) {
+            throw new BizException("面试题目不存在");
+        }
+        
         Interview interview = interviewMapper.selectById(item.getInterviewId());
         // 状态已完成不允许更新
         if (interview != null) {
@@ -40,9 +47,14 @@ public class InterviewItemServiceImpl extends ServiceImpl<InterviewItemMapper, I
         }
         item.setCandidateAnswer(candidateAnswer);
 
-        // 2. 调用AI评分（这里模拟一个逻辑：匹配到关键字加分）
-        double score = aiEvaluate(item.getCandidateAnswer(), item.getQuestionId());
-        item.setAiScore(BigDecimal.valueOf(score));
+        // 2. 调用AI评分
+        Question question = questionService.getById(item.getQuestionId());
+        if (question == null) {
+            throw new BizException("题目不存在");
+        }
+        
+        AiEvaluationResult evaluationResult = aiEvaluationService.evaluate(question, candidateAnswer);
+        item.setAiScore(evaluationResult.getTotalScore());
         interviewItemMapper.updateById(item);
 
         // 3. 更新面试总分
@@ -63,12 +75,5 @@ public class InterviewItemServiceImpl extends ServiceImpl<InterviewItemMapper, I
         QueryWrapper<InterviewItem> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("interview_id", interviewId);
         return interviewItemMapper.selectList(queryWrapper);
-    }
-
-    private double aiEvaluate(String answer, Long questionId) {
-        // 模拟AI评分逻辑
-        if (answer == null || answer.isEmpty()) return 0.0;
-        if (answer.toLowerCase().contains("java")) return 90.0;
-        return 60.0 + new Random().nextInt(20); // 60-80分之间
     }
 }

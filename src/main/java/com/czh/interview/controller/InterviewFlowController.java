@@ -3,9 +3,12 @@ package com.czh.interview.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.czh.interview.common.R;
 import com.czh.interview.common.dto.AnswerRequest;
+import com.czh.interview.common.dto.AnswerResponse;
+import com.czh.interview.common.dto.AiEvaluationResult;
 import com.czh.interview.entity.Interview;
 import com.czh.interview.entity.InterviewItem;
 import com.czh.interview.entity.Question;
+import com.czh.interview.service.AiEvaluationService;
 import com.czh.interview.service.InterviewItemService;
 import com.czh.interview.service.InterviewService;
 import com.czh.interview.service.QuestionService;
@@ -23,6 +26,7 @@ public class InterviewFlowController {
     private final InterviewService interviewService;
     private final QuestionService questionService;
     private final InterviewItemService interviewItemService;
+    private final AiEvaluationService aiEvaluationService;
 
     /**
      * 1️⃣ 开始面试
@@ -53,9 +57,31 @@ public class InterviewFlowController {
      * 2️⃣ 提交答案
      */
     @PostMapping("/answer")
-    public R<String> answer(@RequestBody AnswerRequest request) {
+    public R<AnswerResponse> answer(@RequestBody AnswerRequest request) {
+        // 获取题目和答案
+        InterviewItem item = interviewItemService.getById(request.getInterviewItemId());
+        if (item == null) {
+            return R.error("面试题目不存在");
+        }
+        
+        Question question = questionService.getById(item.getQuestionId());
+        if (question == null) {
+            return R.error("题目不存在");
+        }
+        
+        // 调用AI评分
+        AiEvaluationResult evaluationResult = aiEvaluationService.evaluate(question, request.getCandidateAnswer());
+        
+        // 保存答案和评分
         interviewItemService.submitAnswer(request.getInterviewItemId(), request.getCandidateAnswer());
-        return R.ok("答案提交并评分完成");
+        
+        // 构建响应
+        AnswerResponse response = new AnswerResponse();
+        response.setScore(evaluationResult.getTotalScore());
+        response.setFeedback(evaluationResult.getFeedback());
+        response.setSuggestions(evaluationResult.getSuggestions());
+        
+        return R.ok(response);
     }
 
     /**
